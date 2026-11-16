@@ -2,6 +2,7 @@ name = "autoclipper-login"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
+preview_urls = false
 
 [vars]
 # Public client key of the AutoClipper TikTok app (it appears in every TikTok login link anyway).

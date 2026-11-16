@@ -15,4 +15,4 @@ TWITCH_CLIENT_ID = "vg2e6zxkqpkmwani6j7a3iobzch8o2"
 # once TikTok approves the app.
 TIKTOK_CLIENT_KEY = "sbawtbye7p9ei56b4c"
 
-LOGIN_HELPER_URL = "https://autoclipper-login.SUBDOMAIN.workers.dev"   # filled in after deploying login-helper/
+LOGIN_HELPER_URL = "https://autoclipper-login.aathifzahir.workers.dev"   # source: login-helper/

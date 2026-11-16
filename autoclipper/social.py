@@ -330,8 +330,6 @@ class TikTok:
             r = requests.post(f"https://open.tiktokapis.com/v2/oauth/{path}/", timeout=30,
                               data={"client_key": key, "client_secret": secret, **fields})
         else:        # built-in app: the helper adds the secret (it never reaches this computer)
-            if "SUBDOMAIN" in LOGIN_HELPER_URL:
-                raise SocialError("The AutoClipper login helper isn't set up in this version.")
             if path == "revoke":
                 helper_path, body = "/tiktok/revoke", {"token": fields["token"]}
             elif fields.get("grant_type") == "refresh_token":
