@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import queue
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -18,12 +19,22 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import config as config_mod
 from . import library
+from . import runtime
+from .app import BlockedChannels
+from .config import BLOCKED_PATH, ROOT
+from .twitch import Twitch
 from .ai import Gemini
 from .media import video_duration
 from .social import PORT, TIKTOK_REDIRECT, YOUTUBE_REDIRECT, SocialError, TikTok, YouTube
 
 PAGE = Path(__file__).with_name("publisher.html")
 HOME = f"http://127.0.0.1:{PORT}/"
+class SettingsError(Exception):
+    def __init__(self, fields: dict):
+        super().__init__("Some settings need fixing.")
+        self.fields = fields
+
+
 ALLOWED_ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 
 
@@ -33,6 +44,11 @@ class Publisher:
         self.yt = YouTube()
         self.tt = TikTok(lambda: (self.cfg.tiktok_client_key, self.cfg.tiktok_client_secret))
         self.jobs: dict[str, dict] = {}
+        self._starting_until = 0.0
+        self._start_requested_at = 0.0
+        self._restart_pending = False
+        self._twitch_pending: dict | None = None
+        self._twitch_error = ""
         self.q: queue.Queue = queue.Queue()
         threading.Thread(target=self._worker, daemon=True).start()
 
@@ -111,9 +127,6 @@ class Publisher:
 
     def publish(self, cids: list[str], platforms: list[str], privacy: str,
                 tiktok_mode: str = "inbox", tiktok_privacy: str = "") -> int:
-        if privacy in ("public", "unlisted", "private") and privacy != self.cfg.youtube_privacy:
-            self.cfg.youtube_privacy = privacy
-            config_mod.save(self.cfg)
         n = 0
         for cid in cids:
             for p in platforms:
@@ -217,6 +230,169 @@ class Publisher:
         config_mod.save(self.cfg)
         self.refresh_tiktok()
 
+    # ---------------------------------------------------------- clipper control
+    def clipper_status(self) -> dict:
+        st = runtime.read_status()
+        # "Starting" only until the new clipper reports in (or it has already reported and stopped)
+        if st.get("alive") or st.get("heartbeat", 0) > self._start_requested_at:
+            self._starting_until = 0
+        if self._starting_until > time.time() and not st.get("alive"):
+            st = {"state": "starting", "alive": True, "events": st.get("events", []), "channels": []}
+        st["restart_pending"] = self._restart_pending
+        return st
+
+    def start_clipper(self, test_mode: bool = False):
+        if runtime.read_status().get("alive"):
+            raise SocialError("The clipper is already running.")
+        if not Twitch(self.cfg.twitch_id).has_login():
+            raise SocialError("Connect Twitch first (Settings → Accounts).")
+        runtime.clear_stop_request()
+        flags = 0
+        if sys.platform == "win32":   # runs on its own: keeps going if this window closes
+            flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        args = [sys.executable, "-m", "autoclipper"] + (["--test-mode"] if test_mode else [])
+        subprocess.Popen(args, cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True)
+        self._start_requested_at = time.time()
+        self._starting_until = time.time() + 45
+
+    def stop_clipper(self, mode: str = "graceful"):
+        if not runtime.read_status().get("alive"):
+            raise SocialError("The clipper isn't running.")
+        runtime.request_stop("now" if mode == "now" else "graceful")
+
+    def restart_clipper(self):
+        """Stop (waiting for any clip in progress), then start again with the new settings."""
+        if self._restart_pending:
+            return
+        self._restart_pending = True
+        test = bool(runtime.read_status().get("test_mode"))
+
+        def go():
+            try:
+                if runtime.read_status().get("alive"):
+                    runtime.request_stop("graceful")
+                    deadline = time.time() + 900
+                    while runtime.read_status().get("alive") and time.time() < deadline:
+                        time.sleep(1)
+                self.start_clipper(test)
+            except Exception:
+                pass
+            finally:
+                self._restart_pending = False
+        threading.Thread(target=go, daemon=True).start()
+
+    # ---------------------------------------------------------- settings
+    SETTINGS = {   # field: (type, min, max)
+        "mode": ("choice", ("top", "game", "channels")), "game": ("str",), "channels": ("list",),
+        "language": ("str",), "max_streams": ("int", 1, 20), "min_viewers": ("int", 0, 1_000_000),
+        "exclude_channels": ("list",), "clip_seconds": ("int", 5, 60), "max_clips_per_hour": ("int", 1, 60),
+        "cooldown_minutes": ("int", 0, 120), "sensitivity": ("choice", ("low", "medium", "high")),
+        "make_vertical": ("bool",), "captions": ("bool",), "title_text": ("bool",),
+        "streamer_credit": ("bool",), "youtube_privacy": ("choice", ("public", "unlisted", "private")),
+    }
+
+    def get_settings(self) -> dict:
+        self.cfg = config_mod.load() or self.cfg
+        out = {k: getattr(self.cfg, k) for k in self.SETTINGS}
+        out["gemini_key_set"] = bool(self.cfg.gemini_api_key)
+        out["blocked"] = [{"channel": c, **v} for c, v in sorted(BlockedChannels().entries.items())]
+        return out
+
+    def save_settings(self, data: dict) -> dict:
+        cfg = config_mod.load() or self.cfg
+        errors = {}
+        for k, spec in self.SETTINGS.items():
+            if k not in data:
+                continue
+            v = data[k]
+            kind = spec[0]
+            try:
+                if kind == "int":
+                    v = int(float(v))
+                    if not spec[1] <= v <= spec[2]:
+                        raise ValueError(f"Use a number from {spec[1]} to {spec[2]}.")
+                elif kind == "bool":
+                    v = bool(v)
+                elif kind == "choice":
+                    if v not in spec[1]:
+                        raise ValueError("Pick one of the options.")
+                elif kind == "list":
+                    if isinstance(v, str):
+                        v = re.split(r"[,\s]+", v)
+                    v = [x.strip().lower().lstrip("@").split("/")[-1] for x in v if str(x).strip()]
+                else:
+                    v = str(v).strip()
+                    if k == "language":
+                        v = v.lower()[:2]
+            except (TypeError, ValueError) as e:
+                msg = str(e)
+                errors[k] = msg if msg.startswith(("Use ", "Pick ")) else "Use a number."
+                continue
+            setattr(cfg, k, v)
+        if cfg.mode == "game" and not cfg.game:
+            errors["game"] = "Type a game name."
+        if cfg.mode == "channels" and not cfg.channels:
+            errors["channels"] = "Add at least one channel."
+        if "gemini_api_key" in data and data["gemini_api_key"] is not None:
+            cfg.gemini_api_key = str(data["gemini_api_key"]).strip()
+        if errors:
+            raise SettingsError(errors)
+        config_mod.save(cfg)
+        self.cfg = cfg
+        running = runtime.read_status().get("alive")
+        return {"ok": True, "applies_on_restart": bool(running)}
+
+    def find_game(self, name: str) -> dict:
+        tw = Twitch(self.cfg.twitch_id)
+        if not tw.has_login():
+            raise SocialError("Connect Twitch first to look up games.")
+        g = tw.find_game(name.strip()) if name.strip() else None
+        if not g:
+            raise SocialError(f"No game called \"{name}\" on Twitch. Check the spelling.")
+        return {"name": g["name"], "id": g["id"]}
+
+    def unblock(self, channel: str):
+        b = BlockedChannels()
+        b.entries.pop(channel.lower(), None)
+        BLOCKED_PATH.write_text(json.dumps(b.entries, indent=2), encoding="utf-8")
+
+    # ---------------------------------------------------------- Twitch login (device code)
+    def twitch_status(self) -> dict:
+        tw = Twitch(self.cfg.twitch_id)
+        return {"connected": tw.has_login(), "login": tw.user_login or "",
+                "pending": self._twitch_pending, "error": self._twitch_error}
+
+    def twitch_login(self):
+        if self._twitch_pending and self._twitch_pending.get("active"):
+            return self._twitch_pending
+        self._twitch_error = ""
+        self._twitch_pending = {"active": True, "code": "", "uri": ""}
+        tw = Twitch(self.cfg.twitch_id)
+
+        def show(code, uri):
+            self._twitch_pending.update(code=code, uri=uri)
+
+        def go():
+            try:
+                tw.device_login(show)
+            except Exception as e:
+                self._twitch_error = getattr(e, "message", str(e))
+            finally:
+                self._twitch_pending = None
+        threading.Thread(target=go, daemon=True).start()
+        for _ in range(50):   # wait briefly for Twitch to give us the code
+            if self._twitch_pending is None or self._twitch_pending.get("code"):
+                break
+            time.sleep(0.1)
+        return self._twitch_pending or {}
+
+    def twitch_logout(self):
+        if runtime.read_status().get("alive"):
+            raise SocialError("Stop the clipper before disconnecting Twitch.")
+        from .config import TOKENS_PATH
+        TOKENS_PATH.unlink(missing_ok=True)
+
     # ---------------------------------------------------------- settings
     def set_tiktok_keys(self, key: str, secret: str):
         key, secret = key.strip(), secret.strip()
@@ -295,6 +471,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json([APP.clip_info(v) for v in library.all_videos()])
             if u.path == "/api/status":
                 return self._json(APP.status())
+            if u.path == "/api/clipper/status":
+                return self._json(APP.clipper_status())
+            if u.path == "/api/clipper/log":
+                return self._json({"lines": runtime.tail_log(int(q.get("lines", 200)))})
+            if u.path == "/api/settings":
+                return self._json(APP.get_settings())
+            if u.path == "/api/twitch/status":
+                return self._json(APP.twitch_status())
+            if u.path == "/api/twitch/game":
+                return self._json(APP.find_game(q.get("name", "")))
             if u.path == "/api/tiktok-creator":
                 return self._json(APP.tiktok_creator())
             if u.path.startswith("/video/"):
@@ -364,6 +550,25 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/disconnect":
                 (APP.yt if data.get("platform") == "youtube" else APP.tt).disconnect()
                 return self._json({"ok": True})
+            if u.path == "/api/clipper/start":
+                APP.start_clipper(bool(data.get("test_mode")))
+                return self._json({"ok": True})
+            if u.path == "/api/clipper/stop":
+                APP.stop_clipper(data.get("mode", "graceful"))
+                return self._json({"ok": True})
+            if u.path == "/api/clipper/restart":
+                APP.restart_clipper()
+                return self._json({"ok": True})
+            if u.path == "/api/settings":
+                return self._json(APP.save_settings(data))
+            if u.path == "/api/unblock":
+                APP.unblock(data.get("channel", ""))
+                return self._json({"ok": True})
+            if u.path == "/api/twitch/login":
+                return self._json(APP.twitch_login())
+            if u.path == "/api/twitch/logout":
+                APP.twitch_logout()
+                return self._json({"ok": True})
             if u.path == "/api/tiktok-direct":
                 APP.tiktok_direct(data["id"], data)
                 return self._json({"ok": True})
@@ -379,6 +584,8 @@ class Handler(BaseHTTPRequestHandler):
                 APP.jobs.pop(f"{data.get('id')}|{data.get('platform')}", None)
                 return self._json({"ok": True})
             self._json({"error": "unknown"}, 404)
+        except SettingsError as e:
+            self._json({"error": str(e), "fields": e.fields}, 400)
         except SocialError as e:
             self._json({"error": str(e)}, 400)
         except (KeyError, ValueError) as e:
@@ -401,8 +608,8 @@ def main():
         webbrowser.open(HOME)
         return 1
     server.daemon_threads = True
-    print(f"AutoClipper Publisher is running at {HOME}")
-    print("Keep this window open while you publish. Close it (or press Ctrl+C) when you're done.")
+    print(f"AutoClipper is running at {HOME}")
+    print("Keep this window open while you publish. Clipping keeps going even if you close it.")
     threading.Timer(0.8, lambda: webbrowser.open(HOME)).start()
     try:
         server.serve_forever()

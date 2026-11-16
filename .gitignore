@@ -19,3 +19,5 @@ assets/legal.html
 login-helper/.wrangler/
 login-helper/node_modules/
 .claude/
+demo/
+runtime/

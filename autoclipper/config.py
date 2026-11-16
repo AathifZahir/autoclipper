@@ -24,7 +24,8 @@ class Config:
     client_id: str = ""
 
     # --- What to watch ---
-    mode: str = "channels"          # "channels" = a fixed list, "game" = top live streams of a game
+    mode: str = "channels"          # "channels" = a fixed list, "game" = top live streams of a game,
+                                    # "top" = the most-watched live streams on Twitch (any game)
     channels: list[str] = field(default_factory=list)
     game: str = ""
     language: str = ""              # e.g. "en". Empty = any language (game mode only)

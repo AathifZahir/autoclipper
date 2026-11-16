@@ -131,11 +131,12 @@ def step_targets(cfg: Config, tw: Twitch):
     title("Step 3 of 6 - What should it watch?")
     cfg.mode = ask_choice("Choose", [
         ("game", "A game - automatically watch its biggest live streams (best for new releases)"),
+        ("top", "The most-watched live streams on Twitch right now (any game)"),
         ("channels", "Specific streamers I choose"),
     ], cfg.mode)
 
-    if cfg.mode == "game":
-        while True:
+    if cfg.mode in ("game", "top"):
+        while cfg.mode == "game":
             name = ask("Game name (as on Twitch)", cfg.game)
             game = tw.find_game(name) if name else None
             if game and ask_yes(f"  Found '{game['name']}'. Use this?"):

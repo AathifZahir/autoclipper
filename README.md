@@ -43,7 +43,8 @@ Turn any of these on or off with `setup.bat` (step 5), or in `config.toml`.
 
 | Double-click | What it does |
 |---|---|
-| `start.bat` | Starts clipping. Leave the window open. Press Ctrl+C to stop. |
+| **`AutoClipper.bat`** | **Opens the control center in your browser.** Start and stop clipping, see what it's watching and doing live, change settings, connect accounts, and review and post clips. All in one page. |
+| `start.bat` | Starts clipping in a terminal window instead. Press Ctrl+C to stop. |
 | `test-mode.bat` | Shows the moments it *would* clip, without making clips. Good for tuning sensitivity. |
 | `test-clip.bat` | Makes one clip right now. |
 | `open-final-folder.bat` | Opens your **finished videos** (vertical, with subtitles and title), ready to post. |
