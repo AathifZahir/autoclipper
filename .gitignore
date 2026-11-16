@@ -21,3 +21,4 @@ login-helper/node_modules/
 .claude/
 demo/
 runtime/
+channel_decisions.json

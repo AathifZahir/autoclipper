@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from . import config as config_mod
 from . import library
 from . import runtime
+from . import screening
 from .app import BlockedChannels
 from .config import BLOCKED_PATH, ROOT
 from .twitch import Twitch
@@ -290,6 +291,7 @@ class Publisher:
         "cooldown_minutes": ("int", 0, 120), "sensitivity": ("choice", ("low", "medium", "high")),
         "make_vertical": ("bool",), "captions": ("bool",), "title_text": ("bool",),
         "streamer_credit": ("bool",), "youtube_privacy": ("choice", ("public", "unlisted", "private")),
+        "screen_streams": ("bool",),
     }
 
     def get_settings(self) -> dict:
@@ -297,6 +299,7 @@ class Publisher:
         out = {k: getattr(self.cfg, k) for k in self.SETTINGS}
         out["gemini_key_set"] = bool(self.cfg.gemini_api_key)
         out["blocked"] = [{"channel": c, **v} for c, v in sorted(BlockedChannels().entries.items())]
+        out["decisions"] = [{"channel": c, **v} for c, v in sorted(screening.load_decisions().items())]
         return out
 
     def save_settings(self, data: dict) -> dict:
@@ -561,6 +564,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             if u.path == "/api/settings":
                 return self._json(APP.save_settings(data))
+            if u.path == "/api/channel-decision":
+                dec = data.get("decision")
+                if dec not in ("allow", "skip", "forget"):
+                    raise SocialError("Choose allow, skip or forget.")
+                screening.set_decision(data.get("channel", ""), None if dec == "forget" else dec, data.get("note", ""))
+                return self._json({"ok": True})
             if u.path == "/api/unblock":
                 APP.unblock(data.get("channel", ""))
                 return self._json({"ok": True})

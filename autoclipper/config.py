@@ -32,6 +32,7 @@ class Config:
     max_streams: int = 5            # game mode: how many streams to watch at once
     min_viewers: int = 50           # game mode: ignore streams smaller than this
     exclude_channels: list[str] = field(default_factory=list)
+    screen_streams: bool = True     # skip betting/gambling streams; ask about reruns, poker, fake-looking viewers
 
     # --- Clip limits ---
     clip_seconds: int = 60          # 5-60 (Twitch maximum is 60)
@@ -82,7 +83,7 @@ class Config:
 _SECTIONS = [
     ("Twitch app  (leave client_id empty to use AutoClipper's built-in app)", ["client_id"]),
     ("What to watch  (mode = \"channels\" or \"game\")",
-     ["mode", "channels", "game", "language", "max_streams", "min_viewers", "exclude_channels"]),
+     ["mode", "channels", "game", "language", "max_streams", "min_viewers", "exclude_channels", "screen_streams"]),
     ("Clip limits", ["clip_seconds", "max_clips_per_hour", "cooldown_minutes", "delay_after_moment"]),
     ("Moment detection  (sensitivity = \"low\", \"medium\" or \"high\")",
      ["sensitivity", "min_messages", "min_chatters", "clip_calls", "warmup_seconds"]),

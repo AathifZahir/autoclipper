@@ -81,6 +81,14 @@ Double-click **`publisher.bat`**. A page opens in your browser. It runs only on 
 
 Logins are saved in `social_tokens.json` and `youtube_client.json`. Don't share these files.
 
+## Betting, gambling and replay streams
+
+In "most-watched" and "one game" modes, AutoClipper checks each stream before clipping it:
+- **Skipped automatically:** Slots and Virtual Casino streams, and channels or titles with betting or casino brands. They're listed in the Clipper tab with the reason and an **Allow anyway** button.
+- **Held until you decide:** poker, reruns, replays, 24/7 streams, and big streams with an almost silent chat (possibly fake viewers). Click **Allow clips** or **Never clip** in the Clipper tab.
+
+Your choices are remembered and can be undone in **Settings → Your channel decisions**. Turn the check off in Settings if you don't want it. Streamers you list yourself are never skipped.
+
 ## Good to know
 
 - **Keep the laptop plugged in with the lid open.** AutoClipper stops Windows from going to sleep while it runs. Closing the lid can still put it to sleep, unless you set "When I close the lid" to *Do nothing* in Windows power settings.

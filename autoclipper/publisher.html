@@ -158,6 +158,14 @@
   .savebar { position: sticky; bottom: 0; display: flex; gap: 8px; align-items: center; background: rgba(15,17,21,.95); border-top: 1px solid var(--line); padding: 12px 0; margin-bottom: 16px; }
   .settings-note { background: rgba(124,156,255,.1); border: 1px solid rgba(124,156,255,.4); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .blocked { list-style: none; padding: 0; margin: 0; }
+  .attention { border-color: rgba(245,184,75,.55); }
+  .ask-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; padding: 12px 0; border-top: 1px solid var(--line); align-items: center; }
+  .ask-item:first-of-type { border-top: 0; }
+  .ask-item ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: #e9d3a6; }
+  .ask-item .btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  details.skipped summary { cursor: pointer; } details.skipped[open] summary { margin-bottom: 8px; }
+  .feed .k-screen { color: var(--bad); } .feed .k-ask { color: var(--warn); }
+  @media (max-width: 560px) { .ask-item { grid-template-columns: 1fr; } .ask-item .btns { justify-content: flex-start; } }
   .blocked li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
   .blocked li:first-child { border-top: 0; }
   .acct-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0 10px; }
@@ -198,6 +206,15 @@
   </div>
   <div class="twitch-connect" id="cl-twitch" hidden></div>
   <ul class="facts" id="cl-facts" aria-label="Clipper summary"></ul>
+  <section class="panel attention" id="cl-ask-panel" aria-labelledby="h-ask" hidden>
+    <h2 id="h-ask">Needs your decision</h2>
+    <p class="hint">These streams look unusual, so AutoClipper won't clip them until you choose. Your choice is remembered.</p>
+    <div id="cl-ask"></div>
+  </section>
+  <details class="panel skipped" id="cl-skipped-box" hidden>
+    <summary><b id="cl-skipped-title">Skipped automatically</b> <span class="sub">betting and gambling streams</span></summary>
+    <div id="cl-skipped"></div>
+  </details>
   <div class="cols">
     <section class="panel" aria-labelledby="h-streams">
       <h2 id="h-streams">Streams being watched</h2>
@@ -262,6 +279,7 @@
       <div class="f"><label for="s-min_viewers">Skip streams with fewer viewers than</label><input type="number" id="s-min_viewers" name="min_viewers" min="0" aria-describedby="s-min_viewers-msg"><p class="msg" id="s-min_viewers-msg"></p></div>
       <div class="f"><label for="s-language">Language</label><input type="text" id="s-language" name="language" maxlength="2" placeholder="any" aria-describedby="s-language-help"><p class="hint" id="s-language-help">Two letters, like en or es. Leave empty for any language.</p></div>
     </div>
+    <label class="chk"><input type="checkbox" name="screen_streams"> <span>Skip betting and gambling streams, and ask me about reruns, poker and streams that look like they have fake viewers<br><span class="sub">Only for "most-watched" and "one game". Streamers you list yourself are never skipped.</span></span></label>
     <div class="f"><label for="s-exclude">Never clip these streamers</label>
       <textarea id="s-exclude" name="exclude_channels" rows="2" placeholder="Twitch names, separated by commas"></textarea></div>
   </fieldset>
@@ -305,6 +323,12 @@
     <button type="submit" class="primary" id="st-save">Save settings</button>
   </div>
 </form>
+
+  <section class="panel" aria-labelledby="h-decisions">
+    <h2 id="h-decisions">Your channel decisions</h2>
+    <p class="hint">Streams you allowed or told AutoClipper never to clip.</p>
+    <ul class="blocked" id="s-decisions"></ul>
+  </section>
 
   <section class="panel" aria-labelledby="h-blocked">
     <h2 id="h-blocked">Streamers who block clips</h2>
@@ -833,6 +857,7 @@ function clipperView() {
   if (c.alive) facts.push(`Saved this run: <b>${c.clips_saved || 0}</b>`);
   if (c.alive && c.started_at) facts.push(`Running for <b>${fmtDur(Date.now() / 1000 - c.started_at)}</b>`);
   if (c.alive && c.account) facts.push(`Clips made as <b>${esc(c.account)}</b> on Twitch`);
+  if (c.alive && (c.screened || []).some(x => x.verdict === "ask")) facts.unshift(`<b>${c.screened.filter(x => x.verdict === "ask").length} stream(s) need your decision</b> (below)`);
   facts.push(`<a href="#settings">Change what it watches</a>`);
   $("#cl-facts").innerHTML = facts.map(f => `<li>${f}</li>`).join("");
 
@@ -848,7 +873,20 @@ function clipperView() {
     }).join("");
 
   // activity feed (newest first)
-  const icons = {clip: "✓", fail: "!", blocked: "⦸", moment: "⚡", watch: "+", unwatch: "−", stop: "■", start: "▶"};
+  // streams held back for a decision, and ones skipped automatically
+  const scr = c.alive ? (c.screened || []) : [];
+  const asks = scr.filter(x => x.verdict === "ask"), skips = scr.filter(x => x.verdict === "skip");
+  const row = (x, btns) => `<div class="ask-item"><div><div class="name"><a href="https://twitch.tv/${esc(x.login)}" target="_blank" rel="noopener">${esc(x.name)}</a>
+      <span class="sub">${esc(x.game)} · ${Number(x.viewers).toLocaleString()} viewers</span></div>
+      <ul>${x.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul></div><div class="btns">${btns}</div></div>`;
+  $("#cl-ask-panel").hidden = !asks.length;
+  $("#cl-ask").innerHTML = asks.map(x => row(x,
+    `<button class="primary" onclick="decide('${esc(x.login)}','allow')">Allow clips</button><button onclick="decide('${esc(x.login)}','skip')">Never clip</button>`)).join("");
+  $("#cl-skipped-box").hidden = !skips.length;
+  $("#cl-skipped-title").textContent = `Skipped automatically (${skips.length})`;
+  $("#cl-skipped").innerHTML = skips.map(x => row(x, `<button onclick="decide('${esc(x.login)}','allow')">Allow anyway</button>`)).join("");
+
+  const icons = {clip: "✓", fail: "!", blocked: "⦸", moment: "⚡", watch: "+", unwatch: "−", stop: "■", start: "▶", screen: "⦸", ask: "?"};
   const ev = (c.events || []).slice().reverse();
   $("#cl-feed").innerHTML = ev.length ? ev.map(e => `<li><time>${clock(e.t)}</time><span class="k-${e.kind}" aria-hidden="true">${icons[e.kind] || "•"}</span>
       <span>${esc(e.text)}${e.clip ? ` <a href="#clips">Review</a>` : ""}</span></li>`).join("")
@@ -936,6 +974,9 @@ function fillSettings(s) {
   f.querySelectorAll(".msg").forEach(m => { m.textContent = ""; m.className = "msg"; });
   settingsLoaded = JSON.stringify(readSettings());
   dirty();
+  $("#s-decisions").innerHTML = (s.decisions || []).length ? s.decisions.map(d => `<li><span><b>${esc(d.channel)}</b> <span class="sub">${d.decision === "allow" ? "allowed" : "never clip"} · ${esc(d.date || "")}</span></span>
+      <button type="button" class="small" onclick="decide('${esc(d.channel)}','forget')">Undo</button></li>`).join("")
+    : `<li><span class="empty-note">None yet.</span></li>`;
   $("#s-blocked").innerHTML = (s.blocked || []).length ? s.blocked.map(b => `<li><span><b>${esc(b.channel)}</b> <span class="sub">since ${esc(b.date || "")}</span></span>
       <button type="button" class="small" onclick="unblock('${esc(b.channel)}')">Try again</button></li>`).join("")
     : `<li><span class="empty-note">None right now.</span></li>`;
@@ -1014,6 +1055,14 @@ async function saveSettings(data) {
 async function restartClipper() {
   try { await api("/api/clipper/restart", {}); $("#st-note").hidden = true; toast("Restarting the clipper…"); location.hash = "clipper"; }
   catch (e) { toast(e.message, 7000); }
+}
+async function decide(ch, decision) {
+  if (decision === "skip" && !confirm(`Never clip ${ch}? You can undo this in Settings → Your channel decisions.`)) return;
+  try {
+    await api("/api/channel-decision", {channel: ch, decision});
+    toast(decision === "allow" ? `${ch} allowed. It can be clipped from now on.` : decision === "skip" ? `${ch} won't be clipped.` : `Decision for ${ch} removed.`);
+  } catch (e) { toast(e.message, 7000); }
+  pollClipper(); if (decision === "forget") loadSettings(true);
 }
 async function unblock(ch) {
   try { await api("/api/unblock", {channel: ch}); toast(`${ch} will be tried again (restart the clipper if it's running).`); loadSettings(true); }

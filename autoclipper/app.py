@@ -14,6 +14,7 @@ from datetime import datetime
 from . import config as config_mod
 from . import library
 from . import runtime
+from . import screening
 from .chat import TwitchChat
 from .config import BLOCKED_PATH, CLIPS_DIR, FINAL_DIR, LOG_PATH, Config
 from .detector import ChannelDetector, Moment
@@ -181,6 +182,9 @@ class AutoClipper:
         self.skipped = 0
         self.stop_mode: str | None = None
         self.stop_event: asyncio.Event | None = None
+        self.screened: dict[str, dict] = {}       # streams skipped or waiting for your OK
+        self.quiet: dict[str, str] = {}           # streams with a suspiciously quiet chat (this run)
+        self._decisions_seen = 0.0
 
     # ---------- status for the control center ----------
     def ev(self, kind: str, text: str, channel: str = "", clip: str = ""):
@@ -208,6 +212,7 @@ class AutoClipper:
                        "cooldown_min": self.cfg.cooldown_minutes, "clip_seconds": self.cfg.clip_seconds},
             "clips_saved": self.clips_made, "skipped": self.skipped, "working": len(self.activity),
             "stop_mode": self.stop_mode, "channels": chans, "events": list(self.events)[-60:],
+            "screened": list(self.screened.values()),
         }
 
     def write_status(self):
@@ -270,9 +275,63 @@ class AutoClipper:
             streams = await asyncio.to_thread(self.tw.get_streams, None, game_id, cfg.language or None, 100)
             skip = set(cfg.exclude_channels) | self.blocked.names()
             streams = [s for s in streams if s["viewer_count"] >= cfg.min_viewers and s["user_login"].lower() not in skip]
-            return streams[:cfg.max_streams]
+            return self.screen_streams(streams)
         streams = await asyncio.to_thread(self.tw.get_streams, cfg.channels)
         return [s for s in streams if s["user_login"].lower() not in self.blocked]
+
+    def screen_streams(self, streams: list[dict]) -> list[dict]:
+        """Keeps betting/gambling streams out, and holds unclear ones until you decide (see screening.py).
+        Only the streams that would otherwise have been picked are listed, so the list stays short."""
+        try:
+            self._decisions_seen = screening.DECISIONS_PATH.stat().st_mtime
+        except OSError:
+            self._decisions_seen = 0.0
+        decisions = screening.load_decisions()
+        picked, screened = [], {}
+        for s in streams:
+            if len(picked) >= self.cfg.max_streams:
+                break
+            login = s["user_login"].lower()
+            choice = decisions.get(login, {}).get("decision")
+            if choice == "skip":
+                continue
+            if choice == "allow" or not self.cfg.screen_streams:
+                picked.append(s)
+                continue
+            verdict, reasons = screening.screen(s)
+            if login in self.quiet:
+                verdict, reasons = "ask", reasons + [self.quiet[login]]
+            if verdict == "ok":
+                picked.append(s)
+                continue
+            screened[login] = {"login": login, "name": s.get("user_name", login), "game": s.get("game_name", ""),
+                               "viewers": s.get("viewer_count", 0), "title": s.get("title", "")[:90],
+                               "verdict": verdict, "reasons": reasons}
+            if login not in self.screened:
+                if verdict == "skip":
+                    log(f"Skipped {login}: {reasons[0]}")
+                    self.ev("screen", f"Skipped {s.get('user_name', login)}: {reasons[0]}", login)
+                else:
+                    log(f"Needs your OK before clipping {login}: {reasons[0]}")
+                    self.ev("ask", f"{s.get('user_name', login)} needs your OK: {reasons[0]}", login)
+        self.screened = screened
+        return picked
+
+    def check_quiet_chats(self):
+        """Huge viewer count but nearly silent chat = possibly fake viewers (or chat is off). Ask first."""
+        if not self.cfg.screen_streams or self.cfg.mode == "channels":
+            return False
+        decisions = screening.load_decisions()
+        now, changed = time.time(), False
+        for login, d in list(self.detectors.items()):
+            if now - d.started < 300 or login in self.quiet or decisions.get(login, {}).get("decision") == "allow":
+                continue
+            viewers = self.live.get(login, {}).get("viewer_count", 0)
+            why = screening.quiet_chat_reason(viewers, len(d.msgs))
+            if why:
+                self.quiet[login] = why
+                changed = True
+        return changed
 
     async def refresh_now(self):
         streams = await self.pick_streams()
@@ -283,7 +342,9 @@ class AutoClipper:
             self.ev("watch", f"Started watching {s['user_name']} ({s['game_name']}, {s['viewer_count']:,} viewers)", c)
             self.detectors[c] = ChannelDetector(c, self.cfg, time.time())
         for c in self.live.keys() - now_live.keys():
-            why = "doesn't allow clips" if c in self.blocked else "offline or no longer in the top list"
+            why = ("doesn't allow clips" if c in self.blocked else
+                   "needs your OK first" if self.screened.get(c, {}).get("verdict") == "ask" else
+                   "skipped (betting or gambling)" if c in self.screened else "offline or no longer in the top list")
             log(f"Stopped watching {c} ({why})")
             self.ev("unwatch", f"Stopped watching {c}: {why}", c)
             self.detectors.pop(c, None)
@@ -312,9 +373,21 @@ class AutoClipper:
 
     # ---------- moments ----------
     async def watch_moments(self):
+        tick = 0
         while True:
             await asyncio.sleep(1)
             now = time.time()
+            tick += 1
+            if tick % 2 == 0:   # you clicked Allow / Never clip in the control center: apply it right away
+                try:
+                    mt = screening.DECISIONS_PATH.stat().st_mtime
+                except OSError:
+                    mt = 0.0
+                if mt != self._decisions_seen and self.cfg.mode != "channels":
+                    self._decisions_seen = mt          # refresh_now re-reads the decisions
+                    self._spawn(self.refresh_now())
+            if tick % 60 == 0 and self.check_quiet_chats():
+                self._spawn(self.refresh_now())
             for c, d in list(self.detectors.items()):
                 m = d.check(now)
                 if m and now - self.last_moment.get(c, 0) > 30:
