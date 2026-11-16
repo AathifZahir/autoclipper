@@ -1,0 +1,21 @@
+# Your own data - never commit
+.venv/
+__pycache__/
+config.toml
+tokens.json
+social_tokens.json
+youtube_client.json
+blocked_channels.json
+clips/
+final/
+clips_log*.csv
+*.ass
+
+# Private notes and separate repos
+TIKTOK_AUDIT.md
+TIKTOK_AUDIT_CHECKLIST.md
+site/
+assets/legal.html
+login-helper/.wrangler/
+login-helper/node_modules/
+.claude/

@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoClipper Publisher</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1d212a; --line: #2a2f3a; --text: #e8e8ea; --muted: #9aa0ad;
+    --accent: #7c9cff; --yt: #ff4e45; --tt: #25f4ee; --ok: #3ecf8e; --warn: #f5b84b; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { padding: 18px 24px 10px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  h1 span { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 8px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 8px 6px 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--ok); } .dot.half { background: var(--warn); }
+  button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: #4a5160; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); color: #0b0d12; border-color: var(--accent); font-weight: 600; }
+  button.small { padding: 3px 9px; font-size: 12px; border-radius: 999px; }
+  .bar { position: sticky; top: 0; z-index: 5; background: rgba(15,17,21,.94); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); padding: 10px 24px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  .bar .grp { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .bar label { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+  select, input[type=text], input[type=password], textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  textarea { width: 100%; resize: vertical; min-height: 64px; }
+  input[type=text].full { width: 100%; }
+  .tabs button.on { border-color: var(--accent); color: var(--accent); }
+  .spacer { flex: 1; }
+  main { padding: 18px 24px 60px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: grid; grid-template-columns: 168px 1fr; overflow: hidden; }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .vid { position: relative; background: #000; }
+  .vid video { width: 168px; height: 299px; object-fit: cover; display: block; }
+  .vid .pick { position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; accent-color: var(--accent); cursor: pointer; }
+  .body { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .who { font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .hook { color: var(--muted); font-size: 12px; font-style: italic; }
+  .score { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); white-space: nowrap; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 6px; text-decoration: none; }
+  .badge.yt { background: rgba(255,78,69,.14); color: #ff8f88; }
+  .badge.tt { background: rgba(37,244,238,.12); color: #7ff8f4; }
+  .posted { font-size: 13px; padding: 8px 10px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .posted.yt { background: rgba(255,78,69,.10); border: 1px solid rgba(255,78,69,.25); }
+  .posted.tt { background: rgba(37,244,238,.07); border: 1px solid rgba(37,244,238,.22); }
+  .posted .links { display: flex; gap: 12px; flex-wrap: wrap; }
+  .posted .links a { font-weight: 600; }
+  .posted .wait { color: var(--warn); } .posted .fail { color: var(--bad); } .posted .ok { color: var(--ok); }
+  .summary { color: var(--muted); font-size: 13px; }
+  .field label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .job { font-size: 12px; padding: 6px 8px; border-radius: 8px; background: var(--panel2); }
+  .job.error { color: var(--bad); } .job.done { color: var(--ok); } .job.working, .job.queued { color: var(--warn); }
+  .empty { color: var(--muted); text-align: center; padding: 80px 20px; }
+  details.setup { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin: 0 24px 12px; padding: 10px 16px; }
+  details.setup summary { cursor: pointer; font-weight: 600; }
+  details.setup ol { padding-left: 20px; color: #cfd2da; } details.setup li { margin: 5px 0; }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; user-select: all; }
+  a { color: #8ab4ff; }
+  dialog#pt { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(860px, 96vw); max-height: 94vh; }
+  dialog#pt::backdrop { background: rgba(0,0,0,.6); }
+  .pt-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .pt-head h2 { margin: 0; font-size: 18px; }
+  .pt-acct { display: flex; align-items: center; gap: 8px; }
+  .pt-acct img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+  .pt-body { display: grid; grid-template-columns: 240px 1fr; gap: 18px; padding: 16px 18px; }
+  .pt-body video { width: 240px; height: 427px; background: #000; border-radius: 10px; object-fit: contain; }
+  .pt-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  select.full { width: 100%; }
+  label.chk { display: flex; gap: 8px; align-items: flex-start; color: var(--text); font-size: 14px; cursor: pointer; margin: 4px 0; }
+  label.chk.off { opacity: .45; cursor: not-allowed; }
+  label.sw { font-weight: 600; }
+  .disclose { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .pt-labelnote { margin-top: 6px; font-size: 13px; color: var(--accent); }
+  .sub.warn { color: var(--warn); }
+  .pt-declare { font-size: 13px; color: var(--muted); margin: 0; }
+  .pt-error { color: var(--bad); font-size: 13px; margin: 0; min-height: 0; }
+  .pt-actions { align-items: center; }
+  @media (max-width: 680px) { .pt-body { grid-template-columns: 1fr; } .pt-body video { width: 100%; height: 360px; } }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #222836; border: 1px solid var(--line); padding: 10px 16px; border-radius: 10px; display: none; max-width: 90vw; z-index: 20; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } .card { grid-template-columns: 120px 1fr; } .vid video { width: 120px; height: 213px; } header, main, .bar { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>AutoClipper Publisher <span>pick clips → write details → post</span></h1>
+  <div class="chips">
+    <div class="chip"><span class="dot" id="yt-dot"></span><span id="yt-text">YouTube</span><span id="yt-btns"></span></div>
+    <div class="chip"><span class="dot" id="tt-dot"></span><span id="tt-text">TikTok</span><span id="tt-btns"></span></div>
+    <div class="chip" style="padding-right:12px"><span class="dot" id="ai-dot"></span><span id="ai-text">Gemini</span></div>
+  </div>
+</header>
+
+<details class="setup" id="yt-setup">
+  <summary>Connect YouTube (one time, ~5 minutes, free)</summary>
+  <ol>
+    <li>Open <a href="https://console.cloud.google.com/projectcreate" target="_blank">Google Cloud</a> and create a project (any name, e.g. <b>AutoClipper</b>).</li>
+    <li>Open <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank">YouTube Data API v3</a> and click <b>Enable</b>.</li>
+    <li>Open <a href="https://console.cloud.google.com/auth/overview" target="_blank">Google Auth Platform</a> → <b>Get started</b>: app name <b>AutoClipper</b>, your email, audience <b>External</b>.</li>
+    <li>Go to <b>Audience</b> → click <b>Publish app</b> (so the login doesn't expire every 7 days). Google will later call it "unverified" - that's fine, it's your own app.</li>
+    <li>Go to <a href="https://console.cloud.google.com/auth/clients" target="_blank">Clients</a> → <b>Create client</b> → type <b>Desktop app</b> → Create → <b>Download JSON</b>.</li>
+    <li>Choose that file here: <input type="file" id="yt-file" accept=".json,application/json"></li>
+    <li>Click <b>Connect</b> next to YouTube at the top and sign in with the Google account that owns your channel.
+      If Google says "Google hasn't verified this app", click <b>Advanced</b> → <b>Go to AutoClipper</b>.</li>
+  </ol>
+</details>
+
+<details class="setup" id="tt-setup">
+  <summary>Connect TikTok</summary>
+  <p>Click <b>Connect</b> next to TikTok at the top and approve AutoClipper on TikTok's page. That's all.</p>
+  <p class="sub">Advanced (optional): to use your own TikTok developer app instead of AutoClipper's, follow these steps.</p>
+  <ol>
+    <li>Open <a href="https://developers.tiktok.com/apps" target="_blank">TikTok for Developers</a>, log in and click <b>Connect an app</b> (create one, any name).</li>
+    <li>In the app, switch to <b>Sandbox</b> (top of the page) and create a sandbox. Under <b>Target users</b>, add the TikTok account you'll post to.</li>
+    <li>Under <b>Platforms</b>, tick <b>Desktop</b>.</li>
+    <li>Click <b>Add products</b> → add <b>Login Kit</b> and <b>Content Posting API</b>.</li>
+    <li>In <b>Login Kit</b>, add this redirect URI exactly: <code id="tt-redirect">http://localhost:8765/oauth/tiktok/</code></li>
+    <li>Under <b>Scopes</b>, make sure <b>user.info.basic</b>, <b>video.upload</b> and <b>video.publish</b> are ticked. Save.</li>
+    <li>Copy the sandbox <b>Client key</b> and <b>Client secret</b> and paste them here:<br>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="tt-key" placeholder="Client key" style="width:220px">
+        <input type="password" id="tt-secret" placeholder="Client secret" style="width:220px">
+        <button id="tt-save">Save</button>
+      </div></li>
+    <li>Click <b>Connect</b> next to TikTok at the top and log in with that TikTok account.</li>
+  </ol>
+  <p class="sub">TikTok sends each video to your <b>TikTok inbox</b>. Open TikTok on your phone, tap the notification, paste the caption (use the Copy button) and post. Your own app can't post publicly by itself until TikTok audits it. TikTok allows up to 5 videos waiting in your inbox per day.</p>
+</details>
+
+<div class="bar">
+  <div class="grp tabs" id="tabs">
+    <button data-f="new" class="on">Not posted</button><button data-f="all">All</button><button data-f="posted">Posted</button>
+  </div>
+  <div class="grp">
+    <button class="small" id="sel-all">Select all shown</button><button class="small" id="sel-none">Clear</button>
+    <span class="sub" id="sel-count">0 selected</span>
+  </div>
+  <span class="summary" id="summary"></span>
+  <div class="spacer"></div>
+  <div class="grp">
+    <button id="gen-sel">✨ Write details for selected</button>
+  </div>
+  <div class="grp">
+    <label><input type="checkbox" id="to-yt" checked> YouTube</label>
+    <select id="privacy" title="YouTube visibility">
+      <option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option>
+    </select>
+    <label title="Sends each video to your TikTok inbox; you post it in the TikTok app"><input type="checkbox" id="to-tt" checked> TikTok inbox</label>
+    <button class="primary" id="publish">Publish selected</button>
+  </div>
+</div>
+
+<main><div class="grid" id="grid"></div><div class="empty" id="empty" hidden></div></main>
+<div id="toast"></div>
+
+<dialog id="pt" aria-labelledby="pt-title">
+  <div class="pt-head">
+    <h2 id="pt-title">Post to TikTok</h2>
+    <div class="pt-acct"><img id="pt-avatar" alt="" hidden><span id="pt-who"></span></div>
+  </div>
+  <div class="pt-body">
+    <video id="pt-video" controls playsinline preload="metadata"></video>
+    <div class="pt-form">
+      <div class="field"><label for="pt-caption">Title <span id="pt-count"></span></label>
+        <textarea id="pt-caption" rows="4" maxlength="2200"></textarea></div>
+
+      <div class="field"><label for="pt-privacy">Who can view this video</label>
+        <select id="pt-privacy" class="full"></select></div>
+
+      <div class="field"><label>Allow users to</label>
+        <div class="row">
+          <label class="chk"><input type="checkbox" id="pt-comment"> Comment</label>
+          <label class="chk"><input type="checkbox" id="pt-duet"> Duet</label>
+          <label class="chk"><input type="checkbox" id="pt-stitch"> Stitch</label>
+        </div></div>
+
+      <div class="field disclose">
+        <label class="chk sw"><input type="checkbox" id="pt-disclose"> Disclose video content</label>
+        <div class="sub">Turn on to disclose that this video promotes goods or services in exchange for something of value. Your video could promote yourself, a third party, or both.</div>
+        <div id="pt-disclose-box" hidden>
+          <label class="chk"><input type="checkbox" id="pt-brand-own"> <span><b>Your brand</b><br><span class="sub">You are promoting yourself or your own business.</span></span></label>
+          <label class="chk"><input type="checkbox" id="pt-brand-paid"> <span><b>Branded content</b><br><span class="sub">You are promoting another brand or a third party.</span></span></label>
+          <div class="sub warn" id="pt-paid-note" hidden>Visibility for branded content can't be private.</div>
+          <div class="pt-labelnote" id="pt-label"></div>
+        </div>
+      </div>
+
+      <p class="pt-declare" id="pt-declare"></p>
+      <p class="pt-error" id="pt-error"></p>
+      <div class="row pt-actions">
+        <span class="sub" id="pt-why"></span><span class="spacer"></span>
+        <button id="pt-cancel" type="button">Cancel</button>
+        <button id="pt-post" class="primary" type="button" disabled>Post</button>
+      </div>
+      <p class="sub">After you post, it may take a few minutes for your video to process and appear on your profile.</p>
+    </div>
+  </div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+let clips = [], status = {}, selected = new Set(), filter = "new";
+const saveTimers = {};
+
+function toast(msg, ms = 4000) {
+  const t = $("#toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms);
+}
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ("Error " + r.status));
+  return d;
+}
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const posted = c => !!(c.youtube.video_id || c.tiktok.publish_id);
+
+function renderStatus() {
+  const s = status;
+  const set = (p, st, label, setupId) => {
+    $(`#${p}-dot`).className = "dot " + (st.connected ? "on" : st.configured ? "half" : "");
+    $(`#${p}-text`).textContent = st.connected ? `${label}: ${st.name || "connected"}` : st.configured ? `${label}: not connected` : `${label}: not set up`;
+    $(`#${p}-btns`).innerHTML = st.configured
+      ? `<button class="small" onclick="location.href='/connect/${p === "yt" ? "youtube" : "tiktok"}'">${st.connected ? "Reconnect" : "Connect"}</button>` +
+        (st.connected ? ` <button class="small" onclick="disconnect('${p === "yt" ? "youtube" : "tiktok"}')">Disconnect</button>` : "")
+      : `<button class="small" onclick="openSetup('${setupId}')">Set up</button>`;
+  };
+  set("yt", s.youtube, "YouTube", "yt-setup");
+  set("tt", s.tiktok, "TikTok", "tt-setup");
+  if (s.tiktok.connected) {
+    $("#tt-btns").insertAdjacentHTML("beforeend", s.tiktok_username
+      ? ` <button class="small" onclick="setUser(true)" title="Used to build links to your posted TikToks">@${esc(s.tiktok_username)}</button>`
+      : ` <button class="small" onclick="setUser(false)">Add your @username</button>`);
+  }
+  $("#ai-dot").className = "dot " + (s.gemini ? "on" : "");
+  $("#ai-text").textContent = s.gemini ? "Gemini ready" : "Gemini: no key (run setup.bat step 5)";
+  $("#tt-redirect").textContent = s.tiktok_redirect;
+  if (!$("#privacy").dataset.touched) $("#privacy").value = s.privacy || "public";
+}
+async function setUser(hasOne) {
+  const name = prompt("Your TikTok @username (the one in your profile link, e.g. tiktok.com/@yourname):", status.tiktok_username || "");
+  if (name === null) return;
+  try { await api("/api/tiktok-username", {name}); await loadStatus(); await loadClips(); toast(name ? "Saved - links to posted TikToks will appear on each clip." : "Removed."); }
+  catch (e) { toast(e.message); }
+}
+function renderSummary() {
+  const yt = clips.filter(c => c.youtube.video_id).length;
+  const ttDone = clips.filter(c => c.tiktok.publish_id && (c.tiktok.url || c.tiktok.status === "PUBLISH_COMPLETE")).length;
+  const ttWait = clips.filter(c => c.tiktok.publish_id && !c.tiktok.url && !["PUBLISH_COMPLETE", "FAILED"].includes(c.tiktok.status)).length;
+  $("#summary").textContent = `${clips.length} clips · YouTube: ${yt} posted · TikTok: ${ttDone} posted, ${ttWait} waiting in your inbox`;
+}
+function openSetup(id) { const d = document.getElementById(id); d.open = true; d.scrollIntoView({behavior: "smooth"}); }
+async function disconnect(p) { if (!confirm(`Disconnect ${p}?`)) return; await api("/api/disconnect", {platform: p}); await loadStatus(); }
+
+function jobLine(c, p) {
+  const j = (status.jobs || {})[`${c.id}|${p}`];
+  if (!j) return "";
+  const name = p === "youtube" ? "YouTube" : "TikTok";
+  return `<div class="job ${j.state}">${name}: ${esc(j.msg)}${j.state === "error" ? ` <button class="small" onclick="clearJob('${esc(c.id)}','${p}')">OK</button>` : ""}</div>`;
+}
+function updateJobs() {  // refresh only the status lines, so typing in a box isn't interrupted
+  document.querySelectorAll(".card").forEach(el => {
+    const c = clips.find(c => c.id === el.dataset.id); if (!c) return;
+    el.querySelectorAll(".job").forEach(j => j.remove());
+    el.querySelector(".body").insertAdjacentHTML("beforeend", jobLine(c, "youtube") + jobLine(c, "tiktok"));
+  });
+}
+async function clearJob(id, p) { await api("/api/clear-job", {id, platform: p}); await loadStatus(); render(); }
+
+function postedBlock(c) {
+  let h = "";
+  const y = c.youtube, t = c.tiktok;
+  if (y.video_id) {
+    const pub = y.privacy === "public";
+    h += `<div class="posted yt"><div><b>YouTube</b> · <span class="ok">posted</span> ${esc(y.privacy || "")} · ${esc(y.when || "")}</div>
+      <div class="links"><a href="${esc(y.url)}" target="_blank" rel="noopener">Watch on YouTube ↗</a>
+      <a href="https://studio.youtube.com/video/${esc(y.video_id)}/edit" target="_blank" rel="noopener">Edit in YouTube Studio ↗</a></div>
+      ${pub ? "" : `<div class="sub">${y.privacy === "unlisted" ? "Unlisted: only people with the link can see it." : "Private: only you can see it (sign in to YouTube)."} To make it public, open YouTube Studio → Visibility → Public.</div>`}</div>`;
+  }
+  if (t.publish_id) {
+    let state, extra = "";
+    if (t.url) {
+      state = `<span class="ok">posted</span>`;
+      extra = `<div class="links"><a href="${esc(t.url)}" target="_blank" rel="noopener">Open on TikTok ↗</a></div>`;
+    } else if (t.status === "PUBLISH_COMPLETE") {
+      state = `<span class="ok">posted</span>`;
+      extra = status.tiktok_username ? "" : `<div class="sub">Add your TikTok @username at the top of the page to get the link, or paste it here:</div>`;
+    } else if (t.status === "FAILED") {
+      state = `<span class="fail">failed${t.fail_reason ? ": " + esc(t.fail_reason) : ""}</span>`;
+    } else if (t.mode === "direct") {
+      state = `<span class="wait">TikTok is processing it</span>`;
+      extra = `<div class="sub">Posted directly (${esc({SELF_ONLY: "Only me", PUBLIC_TO_EVERYONE: "Everyone", FOLLOWER_OF_CREATOR: "Followers", MUTUAL_FOLLOW_FRIENDS: "Friends"}[t.privacy] || t.privacy || "")}). The link appears here in a minute or two.</div>`;
+    } else {
+      state = `<span class="wait">waiting in your TikTok inbox</span>`;
+      extra = `<div class="sub">Open the TikTok app → Inbox → the AutoClipper notification → edit → paste the caption → Post. This page updates by itself once it's posted.</div>`;
+    }
+    const needLink = !t.url;
+    h += `<div class="posted tt"><div><b>TikTok</b> · ${state} · sent ${esc(t.when || "")}</div>${extra}
+      ${needLink ? `<div class="row"><input type="text" class="ttlink" placeholder="Paste the TikTok link after posting (optional)" style="flex:1;min-width:0">
+      <button class="small savelink">Save link</button></div>` : ""}</div>`;
+  }
+  return h;
+}
+
+function card(c) {
+  const m = c.meta, p = c.post, sel = selected.has(c.id);
+  const tags = Array.isArray(p.youtube_tags) ? p.youtube_tags.join(", ") : (p.youtube_tags || "");
+  return `<div class="card ${sel ? "sel" : ""}" data-id="${esc(c.id)}">
+    <div class="vid"><video src="${c.url}" controls preload="metadata" playsinline></video>
+      <input type="checkbox" class="pick" ${sel ? "checked" : ""} title="Select"></div>
+    <div class="body">
+      <div class="top"><div><div class="who">${esc(m.streamer || m.channel || c.name)} · ${esc(m.game || "")}</div>
+        <div class="sub">${esc(c.date)} ${esc(c.time)} · ${c.size_mb} MB ${m.clip_url ? `· <a href="${esc(m.clip_url)}" target="_blank">Twitch clip</a>` : ""}</div>
+        ${m.hook ? `<div class="hook">On video: “${esc(m.hook)}”</div>` : ""}</div>
+        ${m.ai_score !== undefined && m.ai_score !== "" ? `<span class="score">AI ${esc(m.ai_score)}/10</span>` : ""}</div>
+      ${postedBlock(c)}
+      <div class="field"><label>YouTube title <span class="cnt" data-for="youtube_title"></span></label>
+        <input type="text" class="full" data-k="youtube_title" maxlength="100" value="${esc(p.youtube_title)}" placeholder="Click ✨ Write with Gemini, or type one"></div>
+      <div class="field"><label>YouTube description</label><textarea data-k="youtube_description" rows="3">${esc(p.youtube_description)}</textarea></div>
+      <div class="field"><label>YouTube tags (comma separated)</label><input type="text" class="full" data-k="youtube_tags" value="${esc(tags)}"></div>
+      <div class="field"><label>TikTok caption <button class="small copy" type="button">Copy</button></label><textarea data-k="tiktok_caption" rows="2">${esc(p.tiktok_caption)}</textarea></div>
+      <div class="row"><button class="gen">✨ Write with Gemini</button>${status.tiktok && status.tiktok.connected && status.tiktok.can_direct ? `<button class="ptt">Post to TikTok…</button>` : ""}</div>
+      ${jobLine(c, "youtube")}${jobLine(c, "tiktok")}
+    </div></div>`;
+}
+
+function shown() {
+  return clips.filter(c => filter === "all" || (filter === "posted" ? posted(c) : !posted(c)));
+}
+function render() {
+  const list = shown();
+  $("#grid").innerHTML = list.map(card).join("");
+  const e = $("#empty");
+  e.hidden = list.length > 0;
+  e.textContent = clips.length === 0 ? "No finished clips yet. Run start.bat - finished videos appear here." :
+    filter === "new" ? "Everything here is posted. 🎉" : "Nothing in this list.";
+  $("#sel-count").textContent = `${selected.size} selected`;
+  renderSummary();
+  document.querySelectorAll(".card").forEach(el => {
+    const id = el.dataset.id;
+    el.querySelector(".pick").onchange = ev => { ev.target.checked ? selected.add(id) : selected.delete(id); el.classList.toggle("sel", ev.target.checked); $("#sel-count").textContent = `${selected.size} selected`; };
+    el.querySelectorAll("[data-k]").forEach(inp => inp.oninput = () => { counter(el); queueSave(id, el); });
+    el.querySelector(".gen").onclick = () => generate(id);
+    const ptt = el.querySelector(".ptt"); if (ptt) ptt.onclick = async () => { await flushSaves(); openPostToTikTok(id); };
+    const sl = el.querySelector(".savelink");
+    if (sl) sl.onclick = async () => {
+      try { await api("/api/set-link", {id, platform: "tiktok", url: el.querySelector(".ttlink").value}); toast("TikTok link saved"); await loadClips(); }
+      catch (e) { toast(e.message, 6000); }
+    };
+    el.querySelector(".copy").onclick = () => { const c = clips.find(c => c.id === id); navigator.clipboard.writeText(withCredit(c, el.querySelector('[data-k="tiktok_caption"]').value)); toast("TikTok caption copied (with streamer credit)"); };
+    counter(el);
+  });
+}
+function counter(el) { const n = el.querySelector('[data-k="youtube_title"]').value.length; el.querySelector(".cnt").textContent = `${n}/100`; }
+function readPost(el) { const o = {}; el.querySelectorAll("[data-k]").forEach(i => o[i.dataset.k] = i.value); return o; }
+function queueSave(id, el) {
+  clearTimeout(saveTimers[id]);
+  saveTimers[id] = setTimeout(async () => {
+    const post = readPost(el);
+    try { await api("/api/save", {id, post}); const c = clips.find(c => c.id === id); if (c) c.post = {...c.post, ...post, youtube_tags: post.youtube_tags.split(",").map(s => s.trim()).filter(Boolean)}; }
+    catch (e) { toast("Couldn't save: " + e.message); }
+  }, 500);
+}
+async function flushSaves() {
+  for (const id of Object.keys(saveTimers)) { clearTimeout(saveTimers[id]); const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (el) await api("/api/save", {id, post: readPost(el)}); delete saveTimers[id]; }
+}
+
+async function generate(id) {
+  if (!status.gemini) return toast("Add a Gemini key first (setup.bat, step 5).");
+  const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+  const b = el && el.querySelector(".gen"); if (b) { b.disabled = true; b.textContent = "Writing..."; }
+  try {
+    const d = await api("/api/generate", {id});
+    const c = clips.find(c => c.id === id); if (c) c.post = d.post;
+    render();
+  } catch (e) { toast(e.message, 7000); if (b) { b.disabled = false; b.textContent = "✨ Write with Gemini"; } }
+}
+$("#gen-sel").onclick = async () => {
+  const ids = [...selected]; if (!ids.length) return toast("Select some clips first (tick the box on the video).");
+  for (const id of ids) { toast(`Writing details ${ids.indexOf(id) + 1}/${ids.length}...`, 60000); await generate(id); }
+  toast("Done - check the details and edit anything you like.");
+};
+$("#publish").onclick = async () => {
+  const ids = [...selected]; if (!ids.length) return toast("Select some clips first (tick the box on the video).");
+  const platforms = [];
+  if ($("#to-yt").checked) { if (!status.youtube.connected) return toast("Connect YouTube first (top of the page), or untick YouTube."); platforms.push("youtube"); }
+  if ($("#to-tt").checked) { if (!status.tiktok.connected) return toast("Connect TikTok first (top of the page), or untick TikTok."); platforms.push("tiktok"); }
+  if (!platforms.length) return toast("Tick YouTube and/or TikTok.");
+  const again = clips.filter(c => ids.includes(c.id) && ((platforms.includes("youtube") && c.youtube.video_id) || (platforms.includes("tiktok") && c.tiktok.publish_id))).length;
+  const privacy = $("#privacy").value;
+  const where = platforms.map(p => p === "youtube" ? `YouTube (${privacy})` : "your TikTok inbox").join(" and ");
+  if (!confirm(`Publish ${ids.length} clip(s) to ${where}?` + (again ? `\n\n${again} of them were already posted there - they'll be posted again.` : "") +
+      (platforms.includes("tiktok") && ids.length > 5 ? "\n\nNote: TikTok allows only 5 videos waiting in your inbox per day." : ""))) return;
+  await flushSaves();
+  const d = await api("/api/publish", {ids, platforms, privacy}).catch(e => toast(e.message));
+  if (d) { toast(`Publishing ${d.queued} upload(s)... you can keep using the page.`); selected.clear(); poll(); }
+};
+$("#privacy").onchange = e => e.target.dataset.touched = "1";
+
+/* ---------------- Post to TikTok screen (TikTok's required UX for direct posting) ---------------- */
+const PT = { id: null, creator: null, duration: 0 };
+const MUSIC = "https://www.tiktok.com/legal/page/global/music-usage-confirmation/en";
+const BC_POLICY = "https://www.tiktok.com/legal/page/global/bc-policy/en";
+
+function channelOf(c) { return c.meta.channel || (c.name.split("_")[1] || ""); }
+function withCredit(c, text) {   // the streamer is credited in the caption (not on the video - TikTok's watermark rule)
+  const ch = channelOf(c); if (!ch) return text;
+  const credit = `twitch.tv/${ch}`;
+  return text.toLowerCase().includes(credit.toLowerCase()) ? text : `${text.trim()} (via ${credit})`.trim();
+}
+async function openPostToTikTok(id) {
+  const c = clips.find(c => c.id === id); if (!c) return;
+  if (c.tiktok.publish_id && !confirm("This clip was already sent to TikTok. Post it again?")) return;
+  PT.id = id; PT.creator = null; PT.duration = 0;
+  const dlg = $("#pt");
+  $("#pt-video").src = c.url;
+  $("#pt-caption").value = withCredit(c, c.post.tiktok_caption || c.meta.post_title || c.meta.hook || "");
+  $("#pt-who").textContent = "Loading your TikTok account...";
+  $("#pt-avatar").hidden = true;
+  $("#pt-privacy").innerHTML = `<option value="" disabled selected>Loading...</option>`;
+  ["pt-comment", "pt-duet", "pt-stitch", "pt-disclose", "pt-brand-own", "pt-brand-paid"].forEach(i => { $("#" + i).checked = false; $("#" + i).disabled = false; });
+  $("#pt-error").textContent = "";
+  dlg.showModal();
+  try {
+    PT.creator = await api("/api/tiktok-creator");   // latest creator info every time the screen opens
+  } catch (e) {
+    $("#pt-who").textContent = "Couldn't load your TikTok account.";
+    $("#pt-error").textContent = e.message;
+    ptUpdate(); return;
+  }
+  const cr = PT.creator;
+  $("#pt-who").innerHTML = `Posting as <b>${esc(cr.nickname)}</b>${cr.username ? ` <span class="sub">@${esc(cr.username)}</span>` : ""}`;
+  if (cr.avatar) { $("#pt-avatar").src = cr.avatar; $("#pt-avatar").hidden = false; }
+  // Privacy: only TikTok's options for this account, and NO default - the user must pick.
+  $("#pt-privacy").innerHTML = `<option value="" disabled selected>Select who can view this video</option>` +
+    cr.privacy_options.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("");
+  // Interactions: unchecked by default; greyed out if turned off in the creator's TikTok settings.
+  [["pt-comment", cr.comment_disabled], ["pt-duet", cr.duet_disabled], ["pt-stitch", cr.stitch_disabled]].forEach(([i, off]) => {
+    $("#" + i).disabled = !!off; $("#" + i).closest("label").classList.toggle("off", !!off);
+    $("#" + i).closest("label").title = off ? "Turned off in your TikTok privacy settings" : "";
+  });
+  ptUpdate();
+}
+
+function ptUpdate() {
+  const cr = PT.creator;
+  const disclose = $("#pt-disclose").checked;
+  $("#pt-disclose-box").hidden = !disclose;
+  if (!disclose) { $("#pt-brand-own").checked = false; $("#pt-brand-paid").checked = false; }
+  const own = $("#pt-brand-own").checked, paid = $("#pt-brand-paid").checked;
+  const priv = $("#pt-privacy").value;
+
+  // Branded content can't be private: disable "Only me" while Branded content is ticked, and vice versa.
+  const onlyMe = $('#pt-privacy option[value="SELF_ONLY"]');
+  if (onlyMe) { onlyMe.disabled = paid; onlyMe.title = paid ? "Branded content visibility cannot be set to private." : ""; }
+  $("#pt-brand-paid").disabled = priv === "SELF_ONLY";
+  $("#pt-brand-paid").closest("label").title = priv === "SELF_ONLY" ? "Visibility for branded content can't be private." : "";
+  $("#pt-paid-note").hidden = priv !== "SELF_ONLY" || !disclose;
+
+  $("#pt-label").textContent = !disclose ? "" : paid ? "Your photo/video will be labeled as 'Paid partnership'"
+    : own ? "Your photo/video will be labeled as 'Promotional content'" : "";
+
+  $("#pt-declare").innerHTML = paid
+    ? `By posting, you agree to TikTok's <a href="${BC_POLICY}" target="_blank" rel="noopener">Branded Content Policy</a> and <a href="${MUSIC}" target="_blank" rel="noopener">Music Usage Confirmation</a>.`
+    : `By posting, you agree to TikTok's <a href="${MUSIC}" target="_blank" rel="noopener">Music Usage Confirmation</a>.`;
+
+  let why = "";
+  if (!cr) why = "Waiting for your TikTok account info.";
+  else if (PT.duration && cr.max_seconds && PT.duration > cr.max_seconds) why = `This video is ${Math.round(PT.duration)}s; your account can post up to ${cr.max_seconds}s.`;
+  else if (!priv) why = "Select who can view this video.";
+  else if (disclose && !own && !paid) why = "You need to indicate if your content promotes yourself, a third party, or both.";
+  const btn = $("#pt-post");
+  btn.disabled = !!why; btn.title = why;
+  $("#pt-why").textContent = why;
+  $("#pt-count").textContent = `${$("#pt-caption").value.length}/2200`;
+}
+["pt-privacy", "pt-disclose", "pt-brand-own", "pt-brand-paid", "pt-caption", "pt-comment", "pt-duet", "pt-stitch"]
+  .forEach(i => { $("#" + i).addEventListener("input", ptUpdate); $("#" + i).addEventListener("change", ptUpdate); });
+$("#pt-video").addEventListener("loadedmetadata", e => { PT.duration = e.target.duration || 0; ptUpdate(); });
+$("#pt-cancel").onclick = () => { $("#pt-video").pause(); $("#pt").close(); };
+$("#pt").addEventListener("close", () => $("#pt-video").pause());
+$("#pt-post").onclick = async () => {
+  ptUpdate(); if ($("#pt-post").disabled) return;
+  const body = {
+    id: PT.id, consent: true, caption: $("#pt-caption").value, privacy: $("#pt-privacy").value,
+    allow_comment: $("#pt-comment").checked, allow_duet: $("#pt-duet").checked, allow_stitch: $("#pt-stitch").checked,
+    disclose: $("#pt-disclose").checked, brand_organic: $("#pt-brand-own").checked, brand_content: $("#pt-brand-paid").checked,
+  };
+  $("#pt-post").disabled = true;
+  try {
+    await api("/api/tiktok-direct", body);
+    $("#pt-video").pause(); $("#pt").close();
+    toast("Publishing to TikTok. It may take a few minutes for your video to process and appear on your profile.", 9000);
+    const c = clips.find(c => c.id === PT.id); if (c) c.post.tiktok_caption = body.caption;
+    poll(); setTimeout(checkTikTokSoon, 20000);
+  } catch (e) { $("#pt-error").textContent = e.message; $("#pt-post").disabled = false; }
+};
+async function checkTikTokSoon() {   // follow the post's status until TikTok finishes processing it
+  try { const r = await api("/api/refresh-tiktok", {}); await loadClips(); if (r.waiting) setTimeout(checkTikTokSoon, 20000); } catch (e) {}
+}
+$("#sel-all").onclick = () => { shown().forEach(c => selected.add(c.id)); render(); };
+$("#sel-none").onclick = () => { selected.clear(); render(); };
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
+  filter = b.dataset.f; document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b)); render(); });
+
+$("#yt-file").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = await fetch("/api/youtube-client", {method: "POST", body: await f.text()});
+  const d = await r.json(); if (!r.ok) return toast(d.error, 8000);
+  toast("Google client saved. Now click Connect next to YouTube."); loadStatus();
+};
+$("#tt-save").onclick = async () => {
+  try { await api("/api/tiktok-keys", {key: $("#tt-key").value, secret: $("#tt-secret").value}); $("#tt-secret").value = "";
+        toast("TikTok keys saved. Now click Connect next to TikTok."); loadStatus(); }
+  catch (e) { toast(e.message); }
+};
+
+async function loadStatus() { status = await api("/api/status"); renderStatus(); }
+async function loadClips() { clips = await api("/api/clips"); render(); }
+let polling = false;
+async function poll() {
+  if (polling) return; polling = true;
+  try {
+    while (true) {
+      await loadStatus(); updateJobs();
+      if (!status.busy) break;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    await loadClips();
+  } finally { polling = false; }
+}
+(async () => {
+  const q = new URLSearchParams(location.search);
+  if (q.get("connected")) { toast(`${q.get("connected") === "youtube" ? "YouTube" : "TikTok"} connected${q.get("name") ? " as " + q.get("name") : ""}!`); history.replaceState(null, "", "/"); }
+  await loadStatus();
+  if (!status.youtube.configured && !status.tiktok.configured) $("#yt-setup").open = true;
+  await loadClips();
+  if (status.busy) poll();
+  // Ask TikTok whether inbox videos have been posted yet (now, then every minute while any are waiting)
+  const checkTikTok = async () => {
+    if (!status.tiktok || !status.tiktok.connected) return;
+    try { const r = await api("/api/refresh-tiktok", {}); if (!document.activeElement.matches("input,textarea")) await loadClips(); if (r.waiting) setTimeout(checkTikTok, 60000); }
+    catch (e) { /* try again on next load */ }
+  };
+  checkTikTok();
+  setInterval(() => { if (!polling && document.visibilityState === "visible" && !document.activeElement.matches("input,textarea")) loadClips(); }, 30000);
+})();
+</script>
+</body>
+</html>

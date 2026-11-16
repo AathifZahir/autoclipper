@@ -1,0 +1,13 @@
+name = "autoclipper-login"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+# Public client key of the AutoClipper TikTok app (it appears in every TikTok login link anyway).
+# "sbaw..." is the Sandbox key; replace it with the Production key once TikTok approves the app.
+TIKTOK_CLIENT_KEY = "sbawtbye7p9ei56b4c"
+REDIRECT_URI = "http://localhost:8765/oauth/tiktok/"
+
+# The client secret is NOT in this file. Set it once with:
+#   npx wrangler secret put TIKTOK_CLIENT_SECRET
